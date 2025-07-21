@@ -84,7 +84,7 @@ async function mineBlockInternal() {
 
         // 7. Broadcast the new block to all other nodes (ProjA, ProjB)
         const broadcastPromises = network.networkNodes.map(networkNodeUrl => {
-            console.log(`Node ${network.myNodeUrl}: Broadcasting block ${newBlock.blockIndex} to ${networkNodeUrl}/api/blocks/receive`);
+            console.log(`Node ${network.myNodeUrl}: Broadcasting block ${newBlock.blockIndex} to ${networkNodeUrl}/blocks/receive`);
             // return axios.post(`${networkNodeUrl}/api/blocks/receive`, { newBlock });
             return axios.post(`${networkNodeUrl}/blocks/receive`, { newBlock });
         });

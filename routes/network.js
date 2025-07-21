@@ -42,10 +42,7 @@ router.post('/register-and-broadcast-node', async (req, res) => {
 
         // Send list of all known nodes (including self) to the new node
         const allNetworkNodes = [...networkNodes, myNodeUrl];
-        console.log(`Node ${myNodeUrl}: Sending bulk registration to new node ${newNodeUrl}/api/network/register-nodes-bulk with:`, allNetworkNodes);
-        // await axios.post(`${newNodeUrl}/api/network/register-nodes-bulk`, {
-        //     allNetworkNodes: allNetworkNodes
-        // });
+        console.log(`Node ${myNodeUrl}: Sending bulk registration to new node ${newNodeUrl}/network/register-nodes-bulk with:`, allNetworkNodes);
         await axios.post(`${newNodeUrl}/network/register-nodes-bulk`, {
             allNetworkNodes: allNetworkNodes
         });

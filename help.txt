@@ -1,4 +1,5 @@
-Bash
+https://demoblockchain.org/hash
+https://demoblockchain.org/distributed
 
 # Create a fresh directory
 mkdir blockchain-poc-full

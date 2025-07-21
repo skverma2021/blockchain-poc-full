@@ -63,7 +63,7 @@ router.post('/submit', async function (req, res) {
 
         // 2. Prepare POST requests to all other known nodes to their '/receive' endpoint.
         const broadcastPromises = network.networkNodes.map(networkNodeUrl => {
-            console.log(`Node ${network.myNodeUrl}: Broadcasting to ${networkNodeUrl}/api/transactions/receive`);
+            console.log(`Node ${network.myNodeUrl}: Broadcasting to ${networkNodeUrl}/transactions/receive`);
             // return axios.post(`${networkNodeUrl}/api/transactions/receive`, newTransaction);
             return axios.post(`${networkNodeUrl}/transactions/receive`, newTransaction);
         });
