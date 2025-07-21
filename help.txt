@@ -1,0 +1,119 @@
+Bash
+
+# Create a fresh directory
+mkdir blockchain-poc-full
+cd blockchain-poc-full
+
+# Initialize Node.js project
+npm init -y
+
+# Install dependencies
+npm install express sqlite3 axios sha256 uuid
+
+# Create necessary directories
+mkdir data routes
+
+
+
+
+
+How to Run (Crucial for correct arguments):
+
+
+Save all files into their respective directories (blockchain-poc-full/, blockchain-poc-full/routes/, blockchain-poc-full/data/).
+
+Open three separate terminal windows.
+
+Start each node in its own terminal:
+
+RegAuth (Node X):
+
+Bash
+
+node index.js 3003 http://localhost:3003/api 0 regAuth.db
+(This node will create the Genesis Block)
+
+Project A (Node A):
+
+Bash
+
+node index.js 3001 http://localhost:3001/api 1 projA.db
+(This node will sync its chain from RegAuth)
+
+Project B (Node B):
+
+Bash
+
+node index.js 3002 http://localhost:3002/api 2 projB.db
+(This node will also sync its chain from RegAuth)
+
+Register Nodes with RegAuth (from any terminal, or Postman/Insomnia):
+
+Once all nodes are running, you need to tell RegAuth about the other nodes. You can do this by hitting RegAuth's register-and-broadcast-node endpoint for each project node.
+
+Register ProjA with RegAuth:
+
+Bash
+
+curl -X POST http://localhost:3003/api/network/register-and-broadcast-node \
+-H "Content-Type: application/json" \
+-d '{"newNodeUrl": "http://localhost:3001/api"}'
+Register ProjB with RegAuth:
+
+Bash
+
+curl -X POST http://localhost:3003/api/network/register-and-broadcast-node \
+-H "Content-Type: application/json" \
+-d '{"newNodeUrl": "http://localhost:3002/api"}'
+You should see console output across all nodes indicating successful registration and bulk registration.
+
+Submit Transactions (e.g., from ProjA or ProjB):
+
+Now, submit transactions to the /submit endpoint of ProjA or ProjB.
+
+Submit to ProjA:
+
+Bash
+
+curl -X POST http://localhost:3001/api/transactions/submit \
+-H "Content-Type: application/json" \
+-d '{
+    "submitterId": "ManufacturerAlpha",
+    "stationID": "S25",
+    "SO2": 35,
+    "NO2": 50,
+    "PM10": 120,
+    "PM2.5": 40
+}'
+Repeat this 5 times (or MINE_THRESHOLD times) from ProjA. You can also submit from ProjB.
+
+Observe Block Mining:
+
+Watch the RegAuth (3003) terminal. After 5 transactions have accumulated in its mempool (from ProjA and ProjB broadcasts), it should trigger mineBlockInternal, create a block, and broadcast it.
+
+Watch ProjA (3001) and ProjB (3002) terminals. They should receive and validate the block.
+
+You can then query the /api/transactions endpoint on any node to see the confirmed transactions.
+
+[
+    {
+        "transactionId":"901b6e4de31948448481f1ebf8e77b07",
+        "rowHash":"ef04013ea38990ee4641209a3627b9aa2021711b50c48bb105e3dfb4d1c38bf5"
+    },
+    {
+        "transactionId":"6077f211a0f1484fa61f38bf83cd9401",
+        "rowHash":"f2523732fbef0bc14d112ca0bff95093b5ae6bb575ae1d916199608358cb8f3f"
+    },
+    {
+        "transactionId":"24ccfece215746ddbe26d129770f7d71",
+        "rowHash":"64dc30be70545eb08d4351911e21ff51821a216ab8f98b7f81211d5768e983ac"
+    },
+    {
+        "transactionId":"ea505ae74880458c87d4794f58c4ddbd",
+        "rowHash":"57be26e820282f63e49e509ae4eec25430720aff3ad0153bc274317f0d578036"
+    },
+    {
+        "transactionId":"4621128517b64e5280d88141a313843f",
+        "rowHash":"f16815596ebb46635e9ce1776851ed253d06ca59c262cfd77a77a04b20be15da"
+    }
+]
