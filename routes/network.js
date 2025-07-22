@@ -29,9 +29,14 @@ router.post('/register-and-broadcast-node', async (req, res) => {
 
     // Broadcast this new node to all existing nodes in the networkNodes list
     const regPromises = networkNodes.map(existingNodeUrl => {
+        // if (existingNodeUrl !== newNodeUrl) { // Don't send back to the new node itself in this step
+        //     console.log(`Node ${myNodeUrl}: Broadcasting ${newNodeUrl} to existing node ${existingNodeUrl}/network/register-node`);
+        //     return axios.post(`${existingNodeUrl}/api/network/register-node`, { newNodeUrl })
+        //         .catch(err => console.error(`Node ${myNodeUrl}: Error broadcasting to ${existingNodeUrl}: ${err.message}`));
+        // }
         if (existingNodeUrl !== newNodeUrl) { // Don't send back to the new node itself in this step
             console.log(`Node ${myNodeUrl}: Broadcasting ${newNodeUrl} to existing node ${existingNodeUrl}/network/register-node`);
-            return axios.post(`${existingNodeUrl}/api/network/register-node`, { newNodeUrl })
+            return axios.post(`${existingNodeUrl}/network/register-node`, { newNodeUrl })
                 .catch(err => console.error(`Node ${myNodeUrl}: Error broadcasting to ${existingNodeUrl}: ${err.message}`));
         }
         return Promise.resolve(); // Resolve immediately if it's the new node itself

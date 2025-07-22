@@ -1,0 +1,287 @@
+Initial: the folder 'data' removed
+
+Starting Node: 0
+
+DB Module: Connected to SQLite database at C:\blockchain\blockchain-poc-full\data\regAuth.db
+DB Module: Foreign key enforcement enabled.
+DB Module: Table "bchain" ensured to exist.
+DB Module: Table "mempool_transactions" ensured to exist.
+DB Module: Table "confirmed_transactions" ensured to exist.
+DB Module: Creating Genesis Block for Regulator node...
+DB Module: Genesis Block created.
+Node http://localhost:3003/api: RegAuth node. Starting mining check interval...
+Node http://localhost:3003/api: Server running on port 3003
+Node http://localhost:3003/api: Access at http://localhost:3003/api
+Node http://localhost:3003/api: RegAuth Mempool Count: 0
+Node http://localhost:3003/api: RegAuth Mempool Count: 0
+
+Node 1 comes online:
+
+At Node 0:
+Node : Received request for full blockchain.
+Node http://localhost:3003/api: RegAuth Mempool Count: 0
+
+At Node 1:
+DB Module: Project ID set to 1
+DB Module: Using database file at: C:\blockchain\blockchain-poc-full\data\projA.db
+Network Module: My Node URL set to http://localhost:3001/api
+DB Module: Connected to SQLite database at C:\blockchain\blockchain-poc-full\data\projA.db
+DB Module: Foreign key enforcement enabled.
+DB Module: Table "bchain" ensured to exist.
+DB Module: Table "mempool_transactions" ensured to exist.
+DB Module: Table "confirmed_transactions" ensured to exist.
+DB Module: No genesis block found. Awaiting genesis block from RegAuth node.
+Node http://localhost:3001/api: No local blockchain found. Attempting to sync from RegAuth...
+Node http://localhost:3001/api: Received chain of length 1 from RegAuth.
+DB Module: Block (index 0) added to blockchain with 0 transactions and committed.
+Node http://localhost:3001/api: Blockchain synchronized successfully.
+Node http://localhost:3001/api: Server running on port 3001
+Node http://localhost:3001/api: Access at http://localhost:3001/api
+
+Node 2 come online:
+
+At Node 0:
+Node : Received request for full blockchain.
+Node http://localhost:3003/api: RegAuth Mempool Count: 0
+
+At Node 2:
+DB Module: Foreign key enforcement enabled.
+DB Module: Table "bchain" ensured to exist.
+DB Module: Table "mempool_transactions" ensured to exist.
+DB Module: Table "confirmed_transactions" ensured to exist.
+DB Module: No genesis block found. Awaiting genesis block from RegAuth node.
+Node http://localhost:3002/api: No local blockchain found. Attempting to sync from RegAuth...
+Node http://localhost:3002/api: Received chain of length 1 from RegAuth.
+DB Module: Block (index 0) added to blockchain with 0 transactions and committed.
+Node http://localhost:3002/api: Blockchain synchronized successfully.
+Node http://localhost:3002/api: Server running on port 3002
+Node http://localhost:3002/api: Access at http://localhost:3002/api
+
+
+Registering Node 1 on the network:
+
+At Node 0:
+Node http://localhost:3003/api: Registering and broadcasting new node...
+Node http://localhost:3003/api: Added http://localhost:3001/api to networkNodes.
+Node http://localhost:3003/api: Sending bulk registration to new node http://localhost:3001/api/network/register-nodes-bulk with: 
+	[ 
+		'http://localhost:3001/api', 
+		'http://localhost:3003/api' 
+	]
+Node http://localhost:3003/api: RegAuth Mempool Count: 0
+Node http://localhost:3003/api: RegAuth Mempool Count: 0
+
+At Node 1
+Node http://localhost:3001/api: Received bulk registration request...
+Node http://localhost:3001/api: Added node http://localhost:3003/api from bulk registration.
+Node http://localhost:3001/api: Bulk registration successful. Current networkNodes: [ 'http://localhost:3003/api' ]
+
+
+Registering Node 2 on the network:
+
+At Node 0:
+Node http://localhost:3003/api: Registering and broadcasting new node...
+Node http://localhost:3003/api: Added http://localhost:3002/api to networkNodes.
+Node http://localhost:3003/api: Broadcasting http://localhost:3002/api to existing node http://localhost:3001/api/network/register-node
+Node http://localhost:3003/api: Error broadcasting to http://localhost:3001/api: Request failed with status code 404
+Node http://localhost:3003/api: Sending bulk registration to new node http://localhost:3002/api/network/register-nodes-bulk with: [
+  'http://localhost:3001/api',
+  'http://localhost:3002/api',
+  'http://localhost:3003/api'
+]
+Node http://localhost:3003/api: RegAuth Mempool Count: 0
+Node http://localhost:3003/api: RegAuth Mempool Count: 0
+
+
+-----
+after removing api from code enclosed by ***
+
+
+    // Broadcast this new node to all existing nodes in the networkNodes list
+    const regPromises = networkNodes.map(existingNodeUrl => {
+         if (existingNodeUrl !== newNodeUrl) { // Don't send back to the new node itself in this step
+             console.log(`Node ${myNodeUrl}: Broadcasting ${newNodeUrl} to existing node ${existingNodeUrl}/network/register-node`);
+             *** return axios.post(`${existingNodeUrl}/api/network/register-node`, { newNodeUrl }) ***
+                 .catch(err => console.error(`Node ${myNodeUrl}: Error broadcasting to ${existingNodeUrl}: ${err.message}`));
+         }
+
+
+Note: 
+Before the Fix
+Node 1 was NOT made aware of Node 2 when Node 2 registered with Node 0. This was because Node 0's broadcast attempt to Node 1 failed with a 404 error due to the incorrect URL (/api/api/network/register-node).
+
+Node 2 WAS made aware of Node 1 when Node 0 sent Node 2 the allNetworkNodes list via the /register-nodes-bulk endpoint. This list correctly included Node 1's URL, and this bulk registration step was successful.
+
+So, the knowledge flow was asymmetrical: Node 2 knew about Node 1, but Node 1 didn't know about Node 2 from the registration process. However, as discussed, this didn't break the core functionality of block mining and propagation because all transactions and blocks flowed through the central authority (Node 0), which had a complete view of the network.
+-----
+
+At Node 0: after fixing:
+
+Node http://localhost:3003/api: Registering and broadcasting new node...
+Node http://localhost:3003/api: Added http://localhost:3002/api to networkNodes.
+Node http://localhost:3003/api: Broadcasting http://localhost:3002/api to existing node http://localhost:3001/api/network/register-node
+Node http://localhost:3003/api: Sending bulk registration to new node http://localhost:3002/api/network/register-nodes-bulk with: [    
+  'http://localhost:3001/api',
+  'http://localhost:3002/api',
+  'http://localhost:3003/api'
+]
+Node http://localhost:3003/api: RegAuth Mempool Count: 0
+Node http://localhost:3003/api: RegAuth Mempool Count: 0
+
+
+At Node 2
+Node http://localhost:3002/api: Received bulk registration request...
+Node http://localhost:3002/api: Added node http://localhost:3001/api from bulk registration.
+Node http://localhost:3002/api: Added node http://localhost:3003/api from bulk registration.
+Node http://localhost:3002/api: Bulk registration successful. Current networkNodes: [ 'http://localhost:3001/api', 'http://localhost:3003/api' ]
+
+Transactions
+Five transactions A, B, A, B, and A
+
+At Node 0:
+Node : Received transaction for processing...
+Node : Passed Check-1 (Mandatory fields present)
+Node : Original rowHash: 41cf25549909218f9656740a3b0be1072727f37b2ae4df130ac70192cf634c14
+Node : Recalculated Hash: 41cf25549909218f9656740a3b0be1072727f37b2ae4df130ac70192cf634c14
+Node : Passed Check-2 (Hash validation successful)
+DB Module: Transaction inserted into mempool with ID: 389728e9c34d4cb2ac18c2fbb226a09b
+Node http://localhost:3003/api: RegAuth Mempool Count: 1
+Node : Received transaction for processing...
+Node : Passed Check-1 (Mandatory fields present)
+Node : Original rowHash: fe4f22ed6b9f7679d1134bb375f5cf088d42afb0b535ed6e58894de965744ee7
+Node : Recalculated Hash: fe4f22ed6b9f7679d1134bb375f5cf088d42afb0b535ed6e58894de965744ee7
+Node : Passed Check-2 (Hash validation successful)
+DB Module: Transaction inserted into mempool with ID: b2849869ba554cabb2e738645a53e659
+Node http://localhost:3003/api: RegAuth Mempool Count: 2
+Node : Received transaction for processing...
+Node : Passed Check-1 (Mandatory fields present)
+Node : Original rowHash: e5bdb505c59c015bbead4b91baa8ddb48bece52a3ac90eb7f277786884c4f6f9
+Node : Recalculated Hash: e5bdb505c59c015bbead4b91baa8ddb48bece52a3ac90eb7f277786884c4f6f9
+Node : Passed Check-2 (Hash validation successful)
+DB Module: Transaction inserted into mempool with ID: 1cbd33b03b3841d89cb31ce8a23b6bfd
+Node http://localhost:3003/api: RegAuth Mempool Count: 3
+Node : Received transaction for processing...
+Node : Passed Check-1 (Mandatory fields present)
+Node : Original rowHash: b903db4702e70bcae069f65b999ec753c734b68da8f82336ff2cb732fe1cb93c
+Node : Recalculated Hash: b903db4702e70bcae069f65b999ec753c734b68da8f82336ff2cb732fe1cb93c
+Node : Passed Check-2 (Hash validation successful)
+DB Module: Transaction inserted into mempool with ID: 4e799413be384f20bfc9be5dbb35d4a6
+Node http://localhost:3003/api: RegAuth Mempool Count: 4
+Node : Received transaction for processing...
+Node : Passed Check-1 (Mandatory fields present)
+Node : Original rowHash: da956fc8d26fc51d13def6216a3c681bc488bf86dd8904966b85f16a1cc54a06
+Node : Recalculated Hash: da956fc8d26fc51d13def6216a3c681bc488bf86dd8904966b85f16a1cc54a06
+Node : Passed Check-2 (Hash validation successful)
+DB Module: Transaction inserted into mempool with ID: 59421ea3e1434b50a7f6d31376a6bf24
+Node http://localhost:3003/api: RegAuth Mempool Count: 5
+Node http://localhost:3003/api: Mempool count reached 5. Triggering block mine...
+Node : Mempool count reached 5. Triggering block mine...
+DB Module: Block (index 1) added to blockchain with 5 transactions and committed.
+Node : Block 1 mined and added to local blockchain.
+DB Module: Removed 5 transactions from mempool.
+Node : Confirmed transactions removed from mempool.
+Node : Broadcasting block 1 to http://localhost:3001/api/blocks/receive
+Node : Broadcasting block 1 to http://localhost:3002/api/blocks/receive
+Node : Block 1 mined and broadcast successfully.
+Node http://localhost:3003/api: RegAuth Mempool Count: 0
+Node http://localhost:3003/api: RegAuth Mempool Count: 0
+Node http://localhost:3003/api: RegAuth Mempool Count: 0
+
+at Node-1 projA:
+Local:
+Node : Received new transaction for submission...
+DB Module: Transaction inserted into mempool with ID: 389728e9c34d4cb2ac18c2fbb226a09b
+Node : Broadcasting to http://localhost:3003/api/transactions/receive
+Node : Broadcasting to http://localhost:3002/api/transactions/receive
+
+Neighbour:
+Node : Received transaction for processing...
+Node : Passed Check-1 (Mandatory fields present)
+Node : Original rowHash: fe4f22ed6b9f7679d1134bb375f5cf088d42afb0b535ed6e58894de965744ee7
+Node : Recalculated Hash: fe4f22ed6b9f7679d1134bb375f5cf088d42afb0b535ed6e58894de965744ee7
+Node : Passed Check-2 (Hash validation successful)
+DB Module: Transaction inserted into mempool with ID: b2849869ba554cabb2e738645a53e659
+
+Local:
+Node : Received new transaction for submission...
+DB Module: Transaction inserted into mempool with ID: 1cbd33b03b3841d89cb31ce8a23b6bfd
+Node : Broadcasting to http://localhost:3003/api/transactions/receive
+Node : Broadcasting to http://localhost:3002/api/transactions/receive
+Node : Received transaction for processing...
+
+Neighbour:
+Node : Passed Check-1 (Mandatory fields present)
+Node : Original rowHash: b903db4702e70bcae069f65b999ec753c734b68da8f82336ff2cb732fe1cb93c
+Node : Recalculated Hash: b903db4702e70bcae069f65b999ec753c734b68da8f82336ff2cb732fe1cb93c
+Node : Passed Check-2 (Hash validation successful)
+DB Module: Transaction inserted into mempool with ID: 4e799413be384f20bfc9be5dbb35d4a6
+
+Local:
+Node : Received new transaction for submission...
+DB Module: Transaction inserted into mempool with ID: 59421ea3e1434b50a7f6d31376a6bf24
+Node : Broadcasting to http://localhost:3003/api/transactions/receive
+Node : Broadcasting to http://localhost:3002/api/transactions/receive
+
+Node : Received block for processing (Index: 1)...
+Node : Passed Check-1 (Mandatory block fields present)
+Node : Passed Check-2 (Block index is sequential)
+Node : Passed Check-3 (Previous hash matches)
+Node : Passed Check-4 (Block hash validation successful)
+Node : Passed Check-5 (Merkle Root validation successful)
+Node : Passed Check-6 (Transaction compliance validation - placeholder)
+DB Module: Block (index 1) added to blockchain with 5 transactions and committed.
+Node : Block 1 added to local blockchain.
+
+DB Module: Removed 5 transactions from mempool.
+Node : Confirmed transactions removed from mempool.
+
+at Node-2 projB:
+
+Neighbour:
+Node : Received transaction for processing...
+Node : Passed Check-1 (Mandatory fields present)
+Node : Original rowHash: 41cf25549909218f9656740a3b0be1072727f37b2ae4df130ac70192cf634c14
+Node : Recalculated Hash: 41cf25549909218f9656740a3b0be1072727f37b2ae4df130ac70192cf634c14
+Node : Passed Check-2 (Hash validation successful)
+DB Module: Transaction inserted into mempool with ID: 389728e9c34d4cb2ac18c2fbb226a09b
+
+Local:
+Node : Received new transaction for submission...
+DB Module: Transaction inserted into mempool with ID: b2849869ba554cabb2e738645a53e659
+Node : Broadcasting to http://localhost:3001/api/transactions/receive
+Node : Broadcasting to http://localhost:3003/api/transactions/receive
+
+Neighbour:
+Node : Received transaction for processing...
+Node : Passed Check-1 (Mandatory fields present)
+Node : Original rowHash: e5bdb505c59c015bbead4b91baa8ddb48bece52a3ac90eb7f277786884c4f6f9
+Node : Recalculated Hash: e5bdb505c59c015bbead4b91baa8ddb48bece52a3ac90eb7f277786884c4f6f9
+Node : Passed Check-2 (Hash validation successful)
+DB Module: Transaction inserted into mempool with ID: 1cbd33b03b3841d89cb31ce8a23b6bfd
+
+Local:
+Node : Received new transaction for submission...
+DB Module: Transaction inserted into mempool with ID: 4e799413be384f20bfc9be5dbb35d4a6
+Node : Broadcasting to http://localhost:3001/api/transactions/receive
+Node : Broadcasting to http://localhost:3003/api/transactions/receive
+
+Neighbour:
+Node : Received transaction for processing...
+Node : Passed Check-1 (Mandatory fields present)
+Node : Original rowHash: da956fc8d26fc51d13def6216a3c681bc488bf86dd8904966b85f16a1cc54a06
+Node : Recalculated Hash: da956fc8d26fc51d13def6216a3c681bc488bf86dd8904966b85f16a1cc54a06
+Node : Passed Check-2 (Hash validation successful)
+DB Module: Transaction inserted into mempool with ID: 59421ea3e1434b50a7f6d31376a6bf24
+
+Node : Received block for processing (Index: 1)...
+Node : Passed Check-1 (Mandatory block fields present)
+Node : Passed Check-2 (Block index is sequential)
+Node : Passed Check-3 (Previous hash matches)
+Node : Passed Check-4 (Block hash validation successful)
+Node : Passed Check-5 (Merkle Root validation successful)
+Node : Passed Check-6 (Transaction compliance validation - placeholder)
+DB Module: Block (index 1) added to blockchain with 5 transactions and committed.
+Node : Block 1 added to local blockchain.
+
+DB Module: Removed 5 transactions from mempool.
+Node : Confirmed transactions removed from mempool.
