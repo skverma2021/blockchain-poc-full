@@ -2,19 +2,30 @@
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const fs = require('fs');
-const crypto = require('crypto');
+const crypto = require('crypto'); // Use Node's built-in crypto module for sha256
 const { v4: uuidv4 } = require('uuid');
 
-let theProj;
-let fileName;
-let DB_FILE_PATH;
+let theProj; // Stores the project ID (0 for RegAuth, 1 for ProjA, etc.)
+let fileName; // Stores the database file name (e.g., projA.db)
+let DB_FILE_PATH; // Stores the full path to the SQLite database file
+
+// Global database instance for this module
 let db;
 
+/**
+ * Sets the project ID for the current node. This is used when inserting transactions.
+ * @param {string|number} projId The ID of the project/node.
+ */
 function setProjId(projId) {
     theProj = projId;
     console.log(`DB Module: Project ID set to ${theProj}`);
 }
 
+/**
+ * Sets the database file name and ensures the 'data' directory exists.
+ * This must be called before initDb().
+ * @param {string} fname The name of the database file (e.g., 'projA.db').
+ */
 function setDbFile(fname) {
     fileName = fname;
     DB_FILE_PATH = path.join(__dirname, 'data', fileName);
@@ -27,6 +38,12 @@ function setDbFile(fname) {
     }
 }
 
+/**
+ * Initializes the database connection and creates 'bchain', 'mempool_transactions',
+ * and 'confirmed_transactions' tables if they do not exist.
+ * Ensures a genesis block exists in 'bchain' for Regulator (projId '0').
+ * @returns {Promise<sqlite3.Database>} A promise that resolves with the database object.
+ */
 function initDb() {
     return new Promise((resolve, reject) => {
         if (!DB_FILE_PATH) {
@@ -40,6 +57,7 @@ function initDb() {
             }
             console.log(`DB Module: Connected to SQLite database at ${DB_FILE_PATH}`);
 
+            // Enable foreign key constraints (important for confirmed_transactions)
             db.run('PRAGMA foreign_keys = ON;', (pragmaErr) => {
                 if (pragmaErr) {
                     console.error('DB Module: Error enabling foreign keys:', pragmaErr.message);
@@ -48,6 +66,7 @@ function initDb() {
                 console.log('DB Module: Foreign key enforcement enabled.');
             });
 
+            // Define table schemas
             const ensureBchain = `CREATE TABLE IF NOT EXISTS bchain (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 blockIndex INTEGER NOT NULL UNIQUE,
@@ -91,6 +110,7 @@ function initDb() {
                 FOREIGN KEY (block_id) REFERENCES bchain(id)
             )`;
 
+            // Execute all table creations sequentially
             db.serialize(() => {
                 db.run(ensureBchain, (err) => {
                     if (err) { console.error('DB Module: Error creating bchain table:', err.message); return reject(err); }
@@ -105,22 +125,23 @@ function initDb() {
                     console.log('DB Module: Table "confirmed_transactions" ensured to exist.');
                 });
 
+                // Check and create Genesis Block (only for RegAuth, projId '0')
                 db.get(`SELECT COUNT(*) AS count FROM bchain`, [], (err, row) => {
                     if (err) { console.error('DB Module: Error checking genesis block:', err.message); return reject(err); }
 
                     if (row.count > 0) {
                         console.log('DB Module: Genesis Block already exists.');
                         resolve(db);
-                    } else if (String(theProj) === '0') {
+                    } else if (String(theProj) === '0') { // Only RegAuth (ID '0') creates the genesis block
                         console.log('DB Module: Creating Genesis Block for Regulator node...');
                         const genesisBlock = {
                             blockIndex: 0,
                             timestamp: new Date().toISOString(),
-                            transactions: '[]',
+                            transactions: '[]', // No actual transactions in genesis block
                             nonce: 0,
-                            hash: crypto.createHash('sha256').update('regulator_genesis_block_v1').digest('hex'),
-                            previousBlockHash: '0',
-                            merkleRoot: crypto.createHash('sha256').update('genesis_merkle_root_v1').digest('hex')
+                            hash: crypto.createHash('sha256').update('regulator_genesis_block_v1').digest('hex'), // A unique, fixed hash for genesis
+                            previousBlockHash: '0', // Standard for genesis
+                            merkleRoot: crypto.createHash('sha256').update('genesis_merkle_root_v1').digest('hex') // Merkle root for empty transactions
                         };
 
                         const insertGenesis = `
@@ -141,6 +162,7 @@ function initDb() {
                             resolve(db);
                         });
                     } else {
+                        // For non-RegAuth nodes, genesis block will be received from RegAuth
                         console.log('DB Module: No genesis block found. Awaiting genesis block from RegAuth node.');
                         resolve(db);
                     }
@@ -150,6 +172,10 @@ function initDb() {
     });
 }
 
+/**
+ * Closes the database connection.
+ * @returns {Promise<void>} A promise that resolves when the database is closed.
+ */
 function closeDb() {
     return new Promise((resolve, reject) => {
         if (db) {
@@ -163,23 +189,37 @@ function closeDb() {
                 }
             });
         } else {
-            resolve();
+            resolve(); // No database open
         }
     });
 }
 
+/**
+ * Creates (Inserts) a new transaction record into the **mempool_transactions** table.
+ * Uses async/await syntax for cleaner asynchronous flow.
+ * It intelligently uses provided transactionId, timestamp, rowHash, projId if available (for received transactions)
+ * or generates them (for new submissions).
+ * @param {Object} transactionData The transaction object to insert.
+ * @returns {Promise<Object>} A promise that resolves with the inserted transaction data.
+ */
 async function createTransaction(transactionData) {
     if (!db) {
         throw new Error("DB Module: Database not initialized. Call initDb() first.");
     }
+    // Ensure projId is set either globally or provided in the transactionData
     if (theProj === undefined && transactionData.projId === undefined) {
         throw new Error("DB Module: Project ID not set for this node or provided in transaction data.");
     }
 
+    // Prioritize received values, otherwise generate
     const finalTransactionId = transactionData.transactionId || uuidv4().split('-').join('');
     const finalTimestamp = transactionData.timestamp || new Date().toISOString();
+    // Use provided projId from transactionData if available, otherwise use the global theProj
     const finalProjId = transactionData.projId !== undefined ? String(transactionData.projId) : String(theProj);
 
+    // The rawDataJson should be the JSON.stringify of the *original* transaction data,
+    // as it was submitted by the client. If it's already provided (from a broadcast), use it.
+    // Otherwise, stringify the current transactionData (which is the raw input from a local submit).
     const rawDataForHash = transactionData.rawDataJson || JSON.stringify({
         submitterId: transactionData.submitterId,
         stationID: transactionData.stationID,
@@ -189,8 +229,10 @@ async function createTransaction(transactionData) {
         PM2_5: transactionData.PM2_5
     });
 
+    // The rowHash is calculated from a consistent set of data
     const finalRowHash = transactionData.rowHash || crypto.createHash('sha256').update(finalTransactionId + finalTimestamp + rawDataForHash).digest('hex');
 
+    // Destructure core fields from the original transactionData for database columns
     const { submitterId, stationID, SO2, NO2, PM10, PM2_5 } = transactionData;
 
     const sql = `INSERT INTO mempool_transactions
@@ -222,19 +264,24 @@ async function createTransaction(transactionData) {
             });
         });
 
+        // Return the complete transaction data, including generated IDs/hashes and rawDataJson
         return {
             transactionId: finalTransactionId,
             timestamp: finalTimestamp,
             rowHash: finalRowHash,
             projId: finalProjId,
-            rawDataJson: rawDataForHash,
-            submitterId, stationID, SO2, NO2, PM10, PM2_5
+            rawDataJson: rawDataForHash, // Ensure this is always returned for broadcast
+            submitterId, stationID, SO2, NO2, PM10, PM2_5 // Include original fields
         };
     } catch (error) {
-        throw error;
+        throw error; // Re-throw for the caller
     }
 }
 
+/**
+ * Reads (Retrieves) all transaction records from the **confirmed_transactions** table.
+ * @returns {Promise<Array<Object>>} A promise that resolves with an array of transaction objects.
+ */
 function readAllTransactions() {
     return new Promise((resolve, reject) => {
         if (!db) {
@@ -258,7 +305,7 @@ function readAllTransactions() {
                     NO2: row.no2,
                     PM10: row.pm10,
                     PM2_5: row.pm2_5,
-                    fullData: JSON.parse(row.raw_data_json),
+                    fullData: JSON.parse(row.raw_data_json), // Parse original raw data
                     rowHash: row.rowHash
                 }));
                 resolve(transactions);
@@ -267,6 +314,10 @@ function readAllTransactions() {
     });
 }
 
+/**
+ * Gets the current count of transactions in the **mempool_transactions** table.
+ * @returns {Promise<number>} A promise that resolves with the count.
+ */
 function getMempoolCount() {
     return new Promise((resolve, reject) => {
         if (!db) {
@@ -283,17 +334,26 @@ function getMempoolCount() {
     });
 }
 
+/**
+ * Retrieves a specified number of transactions from the **mempool_transactions** for block creation.
+ * Returns the full transaction objects, parsed from raw_data_json, including generated IDs/hashes.
+ * @param {number} limit The maximum number of transactions to retrieve.
+ * @returns {Promise<Array<Object>>} A promise that resolves with an array of transactions.
+ */
 function getTransactionsForBlock(limit) {
     return new Promise((resolve, reject) => {
         if (!db) {
             return reject(new Error("DB Module: Database not initialized. Call initDb() first."));
         }
+        // Order by timestamp to get the oldest transactions first (FIFO)
         db.all(`SELECT * FROM mempool_transactions ORDER BY timestamp ASC LIMIT ?`, [limit], (err, rows) => {
             if (err) {
                 console.error('DB Module: Error getting transactions for block:', err.message);
                 reject(err);
             } else {
                 const transactions = rows.map(row => {
+                    // Reconstruct the full transaction object as it was stored,
+                    // ensuring all fields needed for hashing and storage are present.
                     return {
                         transactionId: row.transaction_id,
                         projId: row.projId,
@@ -314,6 +374,11 @@ function getTransactionsForBlock(limit) {
     });
 }
 
+/**
+ * Removes transactions from the **mempool_transactions** after they have been included in a block.
+ * @param {Array<string>} transactionIds An array of transactionId strings to remove.
+ * @returns {Promise<number>} A promise that resolves with the number of rows deleted.
+ */
 function removeTransactionsFromMempool(transactionIds) {
     return new Promise((resolve, reject) => {
         if (!db) {
@@ -335,6 +400,12 @@ function removeTransactionsFromMempool(transactionIds) {
     });
 }
 
+/**
+ * Adds a confirmed block to the 'bchain' table and its transactions to 'confirmed_transactions'.
+ * This operation is wrapped in a database transaction for atomicity.
+ * @param {Object} block The block object to add, including its transactions array.
+ * @returns {Promise<Object>} A promise that resolves with the added block.
+ */
 function addBlockToBlockchain(block) {
     return new Promise((resolve, reject) => {
         if (!db) {
@@ -343,18 +414,14 @@ function addBlockToBlockchain(block) {
 
         const { blockIndex, timestamp, transactions, nonce, hash, previousBlockHash, merkleRoot } = block;
 
-        // Store a lightweight representation of transactions in the block metadata
-        // IMPORTANT: The 'transactions' array passed into this function during initial sync
-        // will now contain FULL transaction objects due to the fix in getAllBlocks.
-        // So, we need to map them back to the lightweight version for the bchain table.
+        // Store a lightweight representation of transactions in the block metadata (e.g., just IDs and hashes)
         const lightweightTransactions = transactions.map(tx => ({
             transactionId: tx.transactionId,
             rowHash: tx.rowHash
         }));
         const transactionsJson = JSON.stringify(lightweightTransactions);
 
-
-        db.serialize(() => {
+        db.serialize(() => { // Use serialize to ensure sequential operations within this section
             db.run("BEGIN TRANSACTION;", (beginErr) => {
                 if (beginErr) {
                     console.error('DB Module: Error beginning transaction:', beginErr.message);
@@ -362,6 +429,7 @@ function addBlockToBlockchain(block) {
                 }
             });
 
+            // 1. Insert block metadata into 'bchain' table
             const insertBlockSql = `INSERT INTO bchain
                                     (blockIndex, timestamp, transactions, nonce, hash, previousBlockHash, merkleRoot)
                                     VALUES (?, ?, ?, ?, ?, ?, ?)`;
@@ -379,10 +447,12 @@ function addBlockToBlockchain(block) {
                     console.error('DB Module: Error inserting block into bchain:', err.message);
                     return reject(err);
                 }
-                const block_id = this.lastID;
+                const block_id = this.lastID; // Get the ID of the newly inserted block in 'bchain'
 
+                // 2. Insert each transaction into the 'confirmed_transactions' table
                 const insertTxPromises = transactions.map(tx => {
                     return new Promise((res, rej) => {
+                        // Ensure all necessary fields are available in the 'tx' object
                         const { transactionId, projId, timestamp, submitterId, stationID, SO2, NO2, PM10, PM2_5, rawDataJson, rowHash } = tx;
                         const sql = `INSERT INTO confirmed_transactions
                                      (transaction_id, block_id, projId, timestamp, submitter_id, station_id, so2, no2, pm10, pm2_5, raw_data_json, rowHash)
@@ -398,6 +468,7 @@ function addBlockToBlockchain(block) {
 
                 Promise.all(insertTxPromises)
                     .then(() => {
+                        // 3. Commit the database transaction
                         db.run("COMMIT;", (commitErr) => {
                             if (commitErr) {
                                 console.error('DB Module: Error committing block transaction:', commitErr.message);
@@ -438,6 +509,7 @@ function getLastBlock() {
                     row.transactions = JSON.parse(row.transactions);
                     resolve(row);
                 } else {
+                    // This case should ideally not happen if Genesis block is always created for RegAuth
                     resolve(null);
                 }
             }
@@ -446,9 +518,7 @@ function getLastBlock() {
 }
 
 /**
- * Retrieves all blocks from the 'bchain' table, ordered by blockIndex,
- * and includes their full transaction details from 'confirmed_transactions'.
- * This is crucial for initial chain synchronization.
+ * Retrieves all blocks from the 'bchain' table, ordered by blockIndex.
  * @returns {Promise<Array<Object>>} A promise that resolves with an array of block objects.
  */
 function getAllBlocks() {
@@ -456,53 +526,17 @@ function getAllBlocks() {
         if (!db) {
             return reject(new Error("DB Module: Database not initialized. Call initDb() first."));
         }
-
-        db.all(`SELECT * FROM bchain ORDER BY blockIndex ASC`, [], async (err, rows) => {
+        db.all(`SELECT * FROM bchain ORDER BY blockIndex ASC`, [], (err, rows) => {
             if (err) {
                 console.error('DB Module: Error getting all blocks:', err.message);
                 reject(err);
             } else {
-                const chainPromises = rows.map(async (row) => {
-                    const blockId = row.id; // Internal ID from bchain table
-
-                    const transactionsSql = `SELECT transaction_id, projId, timestamp, submitter_id, station_id, so2, no2, pm10, pm2_5, raw_data_json, rowHash
-                                             FROM confirmed_transactions WHERE block_id = ? ORDER BY internal_id ASC`;
-                    const confirmedTxs = await new Promise((txResolve, txReject) => {
-                        db.all(transactionsSql, [blockId], (txErr, txRows) => {
-                            if (txErr) {
-                                console.error(`DB Module: Error getting confirmed transactions for block ${blockId}:`, txErr.message);
-                                txReject(txErr);
-                            } else {
-                                const parsedTxs = txRows.map(txRow => ({
-                                    transactionId: txRow.transaction_id,
-                                    projId: txRow.projId,
-                                    timestamp: txRow.timestamp,
-                                    submitterId: txRow.submitter_id,
-                                    stationID: txRow.station_id,
-                                    SO2: txRow.so2,
-                                    NO2: txRow.no2,
-                                    PM10: txRow.pm10,
-                                    PM2_5: txRow.pm2_5,
-                                    rawDataJson: txRow.raw_data_json,
-                                    rowHash: txRow.rowHash
-                                }));
-                                txResolve(parsedTxs);
-                            }
-                        });
-                    });
-
-                    // Overwrite the lightweight transactions (from bchain.transactions) with the full ones
-                    row.transactions = confirmedTxs;
+                const chain = rows.map(row => {
+                    // Parse the transactions JSON string back into an array of objects
+                    row.transactions = JSON.parse(row.transactions);
                     return row;
                 });
-
-                try {
-                    const fullChain = await Promise.all(chainPromises);
-                    resolve(fullChain);
-                } catch (promiseAllErr) {
-                    console.error('DB Module: Error processing full chain for getAllBlocks:', promiseAllErr.message);
-                    reject(promiseAllErr);
-                }
+                resolve(chain);
             }
         });
     });

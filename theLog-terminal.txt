@@ -1,7 +1,145 @@
-Initial: the folder 'data' removed
+this is regarding addBlockToBlockchain exported by db.js. Please help me understand
 
-Starting Node: 0
+1. the transactions field in bchain contains an array like 
 
+{
+
+"transactionId":"901b6e4de31948448481f1ebf8e77b07",
+
+"rowHash":"ef04013ea38990ee4641209a3627b9aa2021711b50c48bb105e3dfb4d1c38bf5"
+
+} 
+
+2. // 2. Insert each transaction into the 'confirmed_transactions' table
+
+                const insertTxPromises = transactions.map(tx => {
+
+                    return new Promise((res, rej) => {
+
+                        // Ensure all necessary fields are available in the 'tx' object
+
+                        const { transactionId, projId, timestamp, submitterId, stationID, SO2, NO2, PM10, PM2_5, rawDataJson, rowHash } = tx;
+
+   How does tx contains fields like projId, timestamp, submitterId, stationID, SO2, NO2, PM10, PM2_5, rawDataJson, rowHash
+
+?
+
+
+
+
+Show thinking
+You've hit on a very important distinction in how data is handled and passed around in a blockchain system! It's a common pattern to optimize storage and data retrieval.
+
+Let's break down how tx contains all those fields:
+
+1. The bchain Table's transactions Field: A Lightweight Summary
+You are absolutely correct about the bchain table's transactions field. It's designed to store a lightweight summary of the transactions included in that block, typically just their transactionId and rowHash. This is done for efficiency and to keep the block header (what's stored in bchain) relatively small.
+
+When addBlockToBlockchain inserts into bchain, it does this:
+
+JavaScript
+
+// db.js -> addBlockToBlockchain
+// ...
+        const lightweightTransactions = transactions.map(tx => ({
+            transactionId: tx.transactionId,
+            rowHash: tx.rowHash
+        }));
+        const transactionsJson = JSON.stringify(lightweightTransactions); // This is what goes into bchain.transactions
+// ...
+So, the transactions column in your bchain table will indeed contain a JSON string that looks like:
+[{"transactionId":"901b6e4de31948448481f1ebf8e77b07","rowHash":"ef04013ea38990ee4641209a3627b9aa2021711b50c48bb105e3dfb4d1c38bf5"}, {"transactionId":"...", "rowHash":"..."}]
+
+2. The tx Object in the addBlockToBlockchain Loop: The Full Transaction Data
+Now, let's look at how the tx object inside the insertTxPromises loop gets its full data:
+
+JavaScript
+
+// db.js -> addBlockToBlockchain
+// ...
+        const { blockIndex, timestamp, transactions, nonce, hash, previousBlockHash, merkleRoot } = block;
+        // ^^^ The 'transactions' variable here IS THE FULL ARRAY OF TRANSACTION OBJECTS ^^^
+        //     that was passed into addBlockToBlockchain.
+
+        // ...
+        // 2. Insert each transaction into the 'confirmed_transactions' table
+        const insertTxPromises = transactions.map(tx => { // <--- This 'tx' is a full object!
+            return new Promise((res, rej) => {
+                // Ensure all necessary fields are available in the 'tx' object
+                const { transactionId, projId, timestamp, submitterId, stationID, SO2, NO2, PM10, PM2_5, rawDataJson, rowHash } = tx;
+                // ... these fields are correctly destructured from the full 'tx' object
+            });
+        });
+// ...
+The key is the transactions array that addBlockToBlockchain receives as an argument.
+
+This transactions array comes directly from the mineBlockInternal function in routes/blocks.js:
+
+JavaScript
+
+// routes/blocks.js -> mineBlockInternal
+// ...
+        // 1. Get transactions from mempool
+        const pendingTransactions = await db.getTransactionsForBlock(BLOCK_SIZE); // <--- This returns full objects!
+// ...
+        const newBlock = {
+            // ...
+            transactions: pendingTransactions, // <--- The 'transactions' property of newBlock is the full array
+            // ...
+        };
+// ...
+        await db.addBlockToBlockchain(newBlock); // <--- newBlock.transactions (full objects) is passed here
+// ...
+3. How db.getTransactionsForBlock Provides the Full Data
+Finally, let's trace back to db.getTransactionsForBlock in db.js. This function is responsible for retrieving transactions from the mempool_transactions table and reconstructing them into their full object form:
+
+JavaScript
+
+// db.js -> getTransactionsForBlock
+// ...
+        db.all(`SELECT * FROM mempool_transactions ORDER BY timestamp ASC LIMIT ?`, [limit], (err, rows) => {
+            // ...
+            const transactions = rows.map(row => {
+                // This is where the full transaction object is reconstructed from the DB row
+                return {
+                    transactionId: row.transaction_id,
+                    projId: row.projId,
+                    timestamp: row.timestamp,
+                    submitterId: row.submitter_id,
+                    stationID: row.station_id,
+                    SO2: row.so2,
+                    NO2: row.no2,
+                    PM10: row.pm10,
+                    PM2_5: row.pm2_5,
+                    rawDataJson: row.raw_data_json, // The original raw JSON string
+                    rowHash: row.rowHash
+                };
+            });
+            resolve(transactions); // This resolved array contains the full objects
+        });
+// ...
+In summary:
+
+db.createTransaction inserts the full transaction data (including rawDataJson and rowHash) into the mempool_transactions table.
+
+db.getTransactionsForBlock retrieves rows from mempool_transactions and reconstructs the full transaction objects from those rows.
+
+mineBlockInternal receives these full transaction objects from db.getTransactionsForBlock. It uses these full objects to calculate the Merkle Root and builds the newBlock object, passing the full array as newBlock.transactions.
+
+db.addBlockToBlockchain receives this newBlock (which contains the full array of transactions). It then:
+
+Stores a lightweight summary (transactionId, rowHash) in the bchain table's transactions field.
+
+Iterates over the full transaction objects in the received block.transactions array to insert all their detailed fields into the confirmed_transactions table.
+
+This architecture allows you to store a concise block header in bchain while still having all the detailed transaction information readily available in confirmed_transactions for auditing and retrieval.
+
+
+RegAuth:
+PS C:\blockchain\blockchain-poc-full> node index.js 3003 http://localhost:3003/api 0 regAuth.db
+DB Module: Project ID set to 0
+DB Module: Using database file at: C:\blockchain\blockchain-poc-full\data\regAuth.db
+Network Module: My Node URL set to http://localhost:3003/api
 DB Module: Connected to SQLite database at C:\blockchain\blockchain-poc-full\data\regAuth.db
 DB Module: Foreign key enforcement enabled.
 DB Module: Table "bchain" ensured to exist.
@@ -14,14 +152,11 @@ Node http://localhost:3003/api: Server running on port 3003
 Node http://localhost:3003/api: Access at http://localhost:3003/api
 Node http://localhost:3003/api: RegAuth Mempool Count: 0
 Node http://localhost:3003/api: RegAuth Mempool Count: 0
-
-Node 1 comes online:
-
-At Node 0:
-Node : Received request for full blockchain.
 Node http://localhost:3003/api: RegAuth Mempool Count: 0
 
-At Node 1:
+
+Node-A
+PS C:\blockchain\blockchain-poc-full> node index.js 3001 http://localhost:3001/api 1 projA.db
 DB Module: Project ID set to 1
 DB Module: Using database file at: C:\blockchain\blockchain-poc-full\data\projA.db
 Network Module: My Node URL set to http://localhost:3001/api
@@ -38,13 +173,13 @@ Node http://localhost:3001/api: Blockchain synchronized successfully.
 Node http://localhost:3001/api: Server running on port 3001
 Node http://localhost:3001/api: Access at http://localhost:3001/api
 
-Node 2 come online:
 
-At Node 0:
-Node : Received request for full blockchain.
-Node http://localhost:3003/api: RegAuth Mempool Count: 0
-
-At Node 2:
+Node-B
+PS C:\blockchain\blockchain-poc-full> node index.js 3002 http://localhost:3002/api 2 projB.db
+DB Module: Project ID set to 2
+DB Module: Using database file at: C:\blockchain\blockchain-poc-full\data\projB.db
+Network Module: My Node URL set to http://localhost:3002/api
+DB Module: Connected to SQLite database at C:\blockchain\blockchain-poc-full\data\projB.db
 DB Module: Foreign key enforcement enabled.
 DB Module: Table "bchain" ensured to exist.
 DB Module: Table "mempool_transactions" ensured to exist.
@@ -57,66 +192,19 @@ Node http://localhost:3002/api: Blockchain synchronized successfully.
 Node http://localhost:3002/api: Server running on port 3002
 Node http://localhost:3002/api: Access at http://localhost:3002/api
 
-
-Registering Node 1 on the network:
-
-At Node 0:
+regAuth: registering projA
 Node http://localhost:3003/api: Registering and broadcasting new node...
 Node http://localhost:3003/api: Added http://localhost:3001/api to networkNodes.
-Node http://localhost:3003/api: Sending bulk registration to new node http://localhost:3001/api/network/register-nodes-bulk with: 
-	[ 
-		'http://localhost:3001/api', 
-		'http://localhost:3003/api' 
-	]
+Node http://localhost:3003/api: Sending bulk registration to new node http://localhost:3001/api/network/register-nodes-bulk with: [ 'http://localhost:3001/api', 'http://localhost:3003/api' ]
 Node http://localhost:3003/api: RegAuth Mempool Count: 0
 Node http://localhost:3003/api: RegAuth Mempool Count: 0
 
-At Node 1
+node-A: : registering
 Node http://localhost:3001/api: Received bulk registration request...
 Node http://localhost:3001/api: Added node http://localhost:3003/api from bulk registration.
 Node http://localhost:3001/api: Bulk registration successful. Current networkNodes: [ 'http://localhost:3003/api' ]
 
-
-Registering Node 2 on the network:
-
-At Node 0:
-Node http://localhost:3003/api: Registering and broadcasting new node...
-Node http://localhost:3003/api: Added http://localhost:3002/api to networkNodes.
-Node http://localhost:3003/api: Broadcasting http://localhost:3002/api to existing node http://localhost:3001/api/network/register-node
-Node http://localhost:3003/api: Error broadcasting to http://localhost:3001/api: Request failed with status code 404
-Node http://localhost:3003/api: Sending bulk registration to new node http://localhost:3002/api/network/register-nodes-bulk with: [
-  'http://localhost:3001/api',
-  'http://localhost:3002/api',
-  'http://localhost:3003/api'
-]
-Node http://localhost:3003/api: RegAuth Mempool Count: 0
-Node http://localhost:3003/api: RegAuth Mempool Count: 0
-
-
------
-after removing api from code enclosed by ***
-
-
-    // Broadcast this new node to all existing nodes in the networkNodes list
-    const regPromises = networkNodes.map(existingNodeUrl => {
-         if (existingNodeUrl !== newNodeUrl) { // Don't send back to the new node itself in this step
-             console.log(`Node ${myNodeUrl}: Broadcasting ${newNodeUrl} to existing node ${existingNodeUrl}/network/register-node`);
-             *** return axios.post(`${existingNodeUrl}/api/network/register-node`, { newNodeUrl }) ***
-                 .catch(err => console.error(`Node ${myNodeUrl}: Error broadcasting to ${existingNodeUrl}: ${err.message}`));
-         }
-
-
-Note: 
-Before the Fix
-Node 1 was NOT made aware of Node 2 when Node 2 registered with Node 0. This was because Node 0's broadcast attempt to Node 1 failed with a 404 error due to the incorrect URL (/api/api/network/register-node).
-
-Node 2 WAS made aware of Node 1 when Node 0 sent Node 2 the allNetworkNodes list via the /register-nodes-bulk endpoint. This list correctly included Node 1's URL, and this bulk registration step was successful.
-
-So, the knowledge flow was asymmetrical: Node 2 knew about Node 1, but Node 1 didn't know about Node 2 from the registration process. However, as discussed, this didn't break the core functionality of block mining and propagation because all transactions and blocks flowed through the central authority (Node 0), which had a complete view of the network.
------
-
-At Node 0: after fixing:
-
+regAuth: : registering projB
 Node http://localhost:3003/api: Registering and broadcasting new node...
 Node http://localhost:3003/api: Added http://localhost:3002/api to networkNodes.
 Node http://localhost:3003/api: Broadcasting http://localhost:3002/api to existing node http://localhost:3001/api/network/register-node
@@ -126,56 +214,122 @@ Node http://localhost:3003/api: Sending bulk registration to new node http://loc
   'http://localhost:3003/api'
 ]
 Node http://localhost:3003/api: RegAuth Mempool Count: 0
-Node http://localhost:3003/api: RegAuth Mempool Count: 0
 
-
-At Node 2
+Node-B:: registering
 Node http://localhost:3002/api: Received bulk registration request...
 Node http://localhost:3002/api: Added node http://localhost:3001/api from bulk registration.
 Node http://localhost:3002/api: Added node http://localhost:3003/api from bulk registration.
 Node http://localhost:3002/api: Bulk registration successful. Current networkNodes: [ 'http://localhost:3001/api', 'http://localhost:3003/api' ]
 
-Transactions
-Five transactions A, B, A, B, and A
 
-At Node 0:
-Node : Received transaction for processing...
+*** regAuth, projA, and projB initialised and registered ***
+
+Transactions:
+
+regAuthNode : Received transaction for processing...
 Node : Passed Check-1 (Mandatory fields present)
-Node : Original rowHash: 41cf25549909218f9656740a3b0be1072727f37b2ae4df130ac70192cf634c14
-Node : Recalculated Hash: 41cf25549909218f9656740a3b0be1072727f37b2ae4df130ac70192cf634c14
+Node : Original rowHash: 556feeb62231e211ff2bfef714fe8395a633179f8be16583cdfdcffa2f147206
+Node : Recalculated Hash: 556feeb62231e211ff2bfef714fe8395a633179f8be16583cdfdcffa2f147206
 Node : Passed Check-2 (Hash validation successful)
-DB Module: Transaction inserted into mempool with ID: 389728e9c34d4cb2ac18c2fbb226a09b
+DB Module: Transaction inserted into mempool with ID: 4bce3b4db2054ed495344ba2399ce9b2
 Node http://localhost:3003/api: RegAuth Mempool Count: 1
 Node : Received transaction for processing...
 Node : Passed Check-1 (Mandatory fields present)
-Node : Original rowHash: fe4f22ed6b9f7679d1134bb375f5cf088d42afb0b535ed6e58894de965744ee7
-Node : Recalculated Hash: fe4f22ed6b9f7679d1134bb375f5cf088d42afb0b535ed6e58894de965744ee7
+Node : Original rowHash: f394ee0d0fa58d9659de1a08c3232fc3d271e8052f3d90490451531c7e637e37
+Node : Recalculated Hash: f394ee0d0fa58d9659de1a08c3232fc3d271e8052f3d90490451531c7e637e37
 Node : Passed Check-2 (Hash validation successful)
-DB Module: Transaction inserted into mempool with ID: b2849869ba554cabb2e738645a53e659
+DB Module: Transaction inserted into mempool with ID: a567f2ab289547fe8e801fdc71e107af
+Node http://localhost:3003/api: RegAuth Mempool Count: 2
 Node http://localhost:3003/api: RegAuth Mempool Count: 2
 Node : Received transaction for processing...
 Node : Passed Check-1 (Mandatory fields present)
-Node : Original rowHash: e5bdb505c59c015bbead4b91baa8ddb48bece52a3ac90eb7f277786884c4f6f9
-Node : Recalculated Hash: e5bdb505c59c015bbead4b91baa8ddb48bece52a3ac90eb7f277786884c4f6f9
+Node : Original rowHash: 4285e4a10ce3190218a972c0c9f2d4c2a69f131c7be7c32a5f6ac714fcc25673
+Node : Recalculated Hash: 4285e4a10ce3190218a972c0c9f2d4c2a69f131c7be7c32a5f6ac714fcc25673
 Node : Passed Check-2 (Hash validation successful)
-DB Module: Transaction inserted into mempool with ID: 1cbd33b03b3841d89cb31ce8a23b6bfd
+DB Module: Transaction inserted into mempool with ID: c46b19c212504a15a84394693e9fddd2
 Node http://localhost:3003/api: RegAuth Mempool Count: 3
 Node : Received transaction for processing...
 Node : Passed Check-1 (Mandatory fields present)
-Node : Original rowHash: b903db4702e70bcae069f65b999ec753c734b68da8f82336ff2cb732fe1cb93c
-Node : Recalculated Hash: b903db4702e70bcae069f65b999ec753c734b68da8f82336ff2cb732fe1cb93c
+Node : Original rowHash: acb8a1f37861c6c64b96b5de3062192f32b1095bc4e3bd76b170bc1311016845
+Node : Recalculated Hash: acb8a1f37861c6c64b96b5de3062192f32b1095bc4e3bd76b170bc1311016845
 Node : Passed Check-2 (Hash validation successful)
-DB Module: Transaction inserted into mempool with ID: 4e799413be384f20bfc9be5dbb35d4a6
+DB Module: Transaction inserted into mempool with ID: 22df2b5d8be34e018382957aa6c7f0d2
+Node http://localhost:3003/api: RegAuth Mempool Count: 4
 Node http://localhost:3003/api: RegAuth Mempool Count: 4
 Node : Received transaction for processing...
 Node : Passed Check-1 (Mandatory fields present)
-Node : Original rowHash: da956fc8d26fc51d13def6216a3c681bc488bf86dd8904966b85f16a1cc54a06
-Node : Recalculated Hash: da956fc8d26fc51d13def6216a3c681bc488bf86dd8904966b85f16a1cc54a06
+Node : Original rowHash: c15836217875ac72714ef1afbf5ff8b95e5eaea8c9ee24bddbabe151a99f97ab
+Node : Recalculated Hash: c15836217875ac72714ef1afbf5ff8b95e5eaea8c9ee24bddbabe151a99f97ab
 Node : Passed Check-2 (Hash validation successful)
-DB Module: Transaction inserted into mempool with ID: 59421ea3e1434b50a7f6d31376a6bf24
+DB Module: Transaction inserted into mempool with ID: a80706bbdf2e4502a70ccc5ec046481b
 Node http://localhost:3003/api: RegAuth Mempool Count: 5
 Node http://localhost:3003/api: Mempool count reached 5. Triggering block mine...
 Node : Mempool count reached 5. Triggering block mine...
+{
+  transactionId: '4bce3b4db2054ed495344ba2399ce9b2',
+  projId: '1',
+  timestamp: '2025-07-22T22:02:31.574Z',
+  submitterId: 'proj-A-ManufacturerBeta',
+  stationID: 'SA1',
+  SO2: 20,
+  NO2: 30,
+  PM10: 80,
+  PM2_5: 25,
+  rawDataJson: '{"submitterId":"proj-A-ManufacturerBeta","stationID":"SA1","SO2":20,"NO2":30,"PM10":80,"PM2_5":25}',
+  rowHash: '556feeb62231e211ff2bfef714fe8395a633179f8be16583cdfdcffa2f147206'
+}
+{
+  transactionId: 'a567f2ab289547fe8e801fdc71e107af',
+  projId: '2',
+  timestamp: '2025-07-22T22:02:43.056Z',
+  submitterId: 'proj-B-ManufacturerBeta',
+  stationID: 'SB1',
+  SO2: 20,
+  NO2: 30,
+  PM10: 80,
+  PM2_5: 25,
+  rawDataJson: '{"submitterId":"proj-B-ManufacturerBeta","stationID":"SB1","SO2":20,"NO2":30,"PM10":80,"PM2_5":25}',
+  rowHash: 'f394ee0d0fa58d9659de1a08c3232fc3d271e8052f3d90490451531c7e637e37'
+}
+{
+  transactionId: 'c46b19c212504a15a84394693e9fddd2',
+  projId: '1',
+  timestamp: '2025-07-22T22:02:55.887Z',
+  submitterId: 'proj-A-ManufacturerBeta',
+  stationID: 'SA2',
+  SO2: 20,
+  NO2: 30,
+  PM10: 80,
+  PM2_5: 25,
+  rawDataJson: '{"submitterId":"proj-A-ManufacturerBeta","stationID":"SA2","SO2":20,"NO2":30,"PM10":80,"PM2_5":25}',
+  rowHash: '4285e4a10ce3190218a972c0c9f2d4c2a69f131c7be7c32a5f6ac714fcc25673'
+}
+{
+  transactionId: '22df2b5d8be34e018382957aa6c7f0d2',
+  projId: '2',
+  timestamp: '2025-07-22T22:03:13.115Z',
+  submitterId: 'proj-B-ManufacturerBeta',
+  stationID: 'SB2',
+  SO2: 20,
+  NO2: 30,
+  PM10: 80,
+  PM2_5: 25,
+  rawDataJson: '{"submitterId":"proj-B-ManufacturerBeta","stationID":"SB2","SO2":20,"NO2":30,"PM10":80,"PM2_5":25}',
+  rowHash: 'acb8a1f37861c6c64b96b5de3062192f32b1095bc4e3bd76b170bc1311016845'
+}
+{
+  transactionId: 'a80706bbdf2e4502a70ccc5ec046481b',
+  projId: '1',
+  timestamp: '2025-07-22T22:03:31.929Z',
+  submitterId: 'proj-A-ManufacturerBeta',
+  stationID: 'SA3',
+  SO2: 20,
+  NO2: 30,
+  PM10: 80,
+  PM2_5: 25,
+  rawDataJson: '{"submitterId":"proj-A-ManufacturerBeta","stationID":"SA3","SO2":20,"NO2":30,"PM10":80,"PM2_5":25}',
+  rowHash: 'c15836217875ac72714ef1afbf5ff8b95e5eaea8c9ee24bddbabe151a99f97ab'
+}
 DB Module: Block (index 1) added to blockchain with 5 transactions and committed.
 Node : Block 1 mined and added to local blockchain.
 DB Module: Removed 5 transactions from mempool.
@@ -187,101 +341,3 @@ Node http://localhost:3003/api: RegAuth Mempool Count: 0
 Node http://localhost:3003/api: RegAuth Mempool Count: 0
 Node http://localhost:3003/api: RegAuth Mempool Count: 0
 
-at Node-1 projA:
-Local:
-Node : Received new transaction for submission...
-DB Module: Transaction inserted into mempool with ID: 389728e9c34d4cb2ac18c2fbb226a09b
-Node : Broadcasting to http://localhost:3003/api/transactions/receive
-Node : Broadcasting to http://localhost:3002/api/transactions/receive
-
-Neighbour:
-Node : Received transaction for processing...
-Node : Passed Check-1 (Mandatory fields present)
-Node : Original rowHash: fe4f22ed6b9f7679d1134bb375f5cf088d42afb0b535ed6e58894de965744ee7
-Node : Recalculated Hash: fe4f22ed6b9f7679d1134bb375f5cf088d42afb0b535ed6e58894de965744ee7
-Node : Passed Check-2 (Hash validation successful)
-DB Module: Transaction inserted into mempool with ID: b2849869ba554cabb2e738645a53e659
-
-Local:
-Node : Received new transaction for submission...
-DB Module: Transaction inserted into mempool with ID: 1cbd33b03b3841d89cb31ce8a23b6bfd
-Node : Broadcasting to http://localhost:3003/api/transactions/receive
-Node : Broadcasting to http://localhost:3002/api/transactions/receive
-Node : Received transaction for processing...
-
-Neighbour:
-Node : Passed Check-1 (Mandatory fields present)
-Node : Original rowHash: b903db4702e70bcae069f65b999ec753c734b68da8f82336ff2cb732fe1cb93c
-Node : Recalculated Hash: b903db4702e70bcae069f65b999ec753c734b68da8f82336ff2cb732fe1cb93c
-Node : Passed Check-2 (Hash validation successful)
-DB Module: Transaction inserted into mempool with ID: 4e799413be384f20bfc9be5dbb35d4a6
-
-Local:
-Node : Received new transaction for submission...
-DB Module: Transaction inserted into mempool with ID: 59421ea3e1434b50a7f6d31376a6bf24
-Node : Broadcasting to http://localhost:3003/api/transactions/receive
-Node : Broadcasting to http://localhost:3002/api/transactions/receive
-
-Node : Received block for processing (Index: 1)...
-Node : Passed Check-1 (Mandatory block fields present)
-Node : Passed Check-2 (Block index is sequential)
-Node : Passed Check-3 (Previous hash matches)
-Node : Passed Check-4 (Block hash validation successful)
-Node : Passed Check-5 (Merkle Root validation successful)
-Node : Passed Check-6 (Transaction compliance validation - placeholder)
-DB Module: Block (index 1) added to blockchain with 5 transactions and committed.
-Node : Block 1 added to local blockchain.
-
-DB Module: Removed 5 transactions from mempool.
-Node : Confirmed transactions removed from mempool.
-
-at Node-2 projB:
-
-Neighbour:
-Node : Received transaction for processing...
-Node : Passed Check-1 (Mandatory fields present)
-Node : Original rowHash: 41cf25549909218f9656740a3b0be1072727f37b2ae4df130ac70192cf634c14
-Node : Recalculated Hash: 41cf25549909218f9656740a3b0be1072727f37b2ae4df130ac70192cf634c14
-Node : Passed Check-2 (Hash validation successful)
-DB Module: Transaction inserted into mempool with ID: 389728e9c34d4cb2ac18c2fbb226a09b
-
-Local:
-Node : Received new transaction for submission...
-DB Module: Transaction inserted into mempool with ID: b2849869ba554cabb2e738645a53e659
-Node : Broadcasting to http://localhost:3001/api/transactions/receive
-Node : Broadcasting to http://localhost:3003/api/transactions/receive
-
-Neighbour:
-Node : Received transaction for processing...
-Node : Passed Check-1 (Mandatory fields present)
-Node : Original rowHash: e5bdb505c59c015bbead4b91baa8ddb48bece52a3ac90eb7f277786884c4f6f9
-Node : Recalculated Hash: e5bdb505c59c015bbead4b91baa8ddb48bece52a3ac90eb7f277786884c4f6f9
-Node : Passed Check-2 (Hash validation successful)
-DB Module: Transaction inserted into mempool with ID: 1cbd33b03b3841d89cb31ce8a23b6bfd
-
-Local:
-Node : Received new transaction for submission...
-DB Module: Transaction inserted into mempool with ID: 4e799413be384f20bfc9be5dbb35d4a6
-Node : Broadcasting to http://localhost:3001/api/transactions/receive
-Node : Broadcasting to http://localhost:3003/api/transactions/receive
-
-Neighbour:
-Node : Received transaction for processing...
-Node : Passed Check-1 (Mandatory fields present)
-Node : Original rowHash: da956fc8d26fc51d13def6216a3c681bc488bf86dd8904966b85f16a1cc54a06
-Node : Recalculated Hash: da956fc8d26fc51d13def6216a3c681bc488bf86dd8904966b85f16a1cc54a06
-Node : Passed Check-2 (Hash validation successful)
-DB Module: Transaction inserted into mempool with ID: 59421ea3e1434b50a7f6d31376a6bf24
-
-Node : Received block for processing (Index: 1)...
-Node : Passed Check-1 (Mandatory block fields present)
-Node : Passed Check-2 (Block index is sequential)
-Node : Passed Check-3 (Previous hash matches)
-Node : Passed Check-4 (Block hash validation successful)
-Node : Passed Check-5 (Merkle Root validation successful)
-Node : Passed Check-6 (Transaction compliance validation - placeholder)
-DB Module: Block (index 1) added to blockchain with 5 transactions and committed.
-Node : Block 1 added to local blockchain.
-
-DB Module: Removed 5 transactions from mempool.
-Node : Confirmed transactions removed from mempool.
