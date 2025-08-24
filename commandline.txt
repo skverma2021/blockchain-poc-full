@@ -1,0 +1,12 @@
+commandline
+
+PS C:\blockchain\blockchain-poc-full> node index.js 3003 http://localhost:3003/api 0 regAuth.db
+PS C:\blockchain\blockchain-poc-full> node index.js 3001 http://localhost:3001/api 1 projA.db
+PS C:\blockchain\blockchain-poc-full> node index.js 3002 http://localhost:3002/api 2 projB.db
+PS C:\blockchain\blockchain-poc-full> node index.js 3004 http://localhost:3004/api 3 projC.db
+
+PS C:\blockchain\blockchain-poc-full> node index.js 3000 http://localhost:3000/api 0 regAuth.db
+PS C:\blockchain\blockchain-poc-full> node index.js 3001 http://localhost:3001/api 1 projA.db
+PS C:\blockchain\blockchain-poc-full> node index.js 3002 http://localhost:3002/api 2 projB.db
+PS C:\blockchain\blockchain-poc-full> node index.js 3003 http://localhost:3003/api 3 projC.db
+

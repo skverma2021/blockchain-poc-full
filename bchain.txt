@@ -1,0 +1,27 @@
+bchain
+
+id:		1	
+blockIndex:	0	
+timeStamp:	2025-08-23T13:43:11.539Z	
+transactions:	[
+		
+		]	
+nonce:		0	
+hash:		23b1cb35208c2e52a2ad92f598900325e419672dd1e3cf44e9972fdc02be783b	
+prevBlockHash:	0	
+merkleRoot:	c33e2243199bc531f3e349aea6d3080e90d104651293698e3ba6784d786fc7e5
+
+id:		2	
+blockIndex:	1	
+timeStamp:	2025-08-23T23:23:40.047Z	
+transactions:	[
+			{"transactionId":"55f43a526d704ae3837369d6863bf555","rowHash":"04a15265d711e8d0d7142257154b4d186a9b941cb0ceff8c49c2a5dbbe2bbc49"},
+			{"transactionId":"7fde1e11566849fd8508d66bd39b2128","rowHash":"e2e367c1e759a0d28655a2d1c220b3b596e7cb0a8ee7cc03e8eac40da8441bea"},
+			{"transactionId":"5e0f8a13a5414f78864c2c75b3bc7326","rowHash":"9d0e883fe8c05835874dac1926f50ce09e393b0ce8ebdbb81988fb723b69a719"},
+			{"transactionId":"1cc845f16cfa46e6a768e05db7bb4116","rowHash":"7a6128add6983998adc82947873d079fffb03a58c53a77637c1d63beb2891ee3"},
+			{"transactionId":"fb63cf8cd4df4ed2abc63bf21ddc9691","rowHash":"b34852bc831c23c315babcc7863068b634bfab1539e16718adb4765266ffe0d9"}
+		]	
+nonce:		0	
+hash:		377af77b3582f0a03609b6416f54d86a9a0921b63da9aa5f6c9059ac5fe4558c	
+prevBlockHash:	23b1cb35208c2e52a2ad92f598900325e419672dd1e3cf44e9972fdc02be783b	
+merkleRoot:	2274f0067e632f9a2744664a57e072daba6a4a560ba58c66e093453aaf5bb90b

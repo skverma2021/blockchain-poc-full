@@ -52,7 +52,7 @@ async function startServer() {
         const lastBlockOnThisChain = await db.getLastBlock();
         if (!lastBlockOnThisChain && String(REG_AUTH_ID) !== '0') {
             console.log(`Node ${MY_NODE_URL}: No local blockchain found. Attempting to sync from RegAuth...`);
-            const regAuthUrl = 'http://localhost:3003'; // Assuming RegAuth is always on 3003 for PoC
+            const regAuthUrl = 'http://localhost:3000'; // Assuming RegAuth is always on 3000 for PoC
 
             try {
                 const response = await axios.get(`${regAuthUrl}/api/blocks/chain`);
